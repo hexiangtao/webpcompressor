@@ -206,9 +206,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 📧 联系方式
 
-- 项目维护者: [你的邮箱]
-- 技术讨论: [GitHub Discussions]
+- 项目维护者: [xiangtaohe@gmail.com]
+- 技术讨论: [GitHub Discussions] 
 
 ---
-
-⭐ 如果这个项目对你有帮助，请给个Star支持！ 
