@@ -1,0 +1,99 @@
+# 构建产物目录
+bin/
+dist/
+build/
+
+# 特定的构建产物（如果在根目录）
+*.exe
+*.dll
+webpcompressor
+webpcompressor_v2
+webptools
+
+# 临时目录和工作目录
+temp_frames/
+tmp/
+.tmp/
+
+# 测试输出（但保留testdata结构）
+testdata/output/
+testdata/tmp/
+examples/output/
+
+# 用户测试文件目录
+output/
+
+# Go 相关文件
+*.test
+*.prof
+*.out
+coverage.txt
+*.cover
+
+# 日志文件
+*.log
+logs/
+
+# IDE 和编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统相关
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows 特定
+*.tmp
+*.temp
+$RECYCLE.BIN/
+Desktop.ini
+
+# 配置文件（如果包含敏感信息）
+config.local.yaml
+config.local.yml
+.env.local
+.env.production
+
+# 依赖和模块缓存
+vendor/
+
+# 开发时的测试文件
+*.webp.bak
+*.webp.old
+test_*.webp
+sample_*.webp
+
+# 性能分析文件
+cpu.prof
+mem.prof
+profile.out
+
+# 调试文件
+debug
+debug.test
+
+# 打包文件
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+
+# 文档生成的临时文件
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# 备份文件
+*.bak
+*.backup
+*~ 

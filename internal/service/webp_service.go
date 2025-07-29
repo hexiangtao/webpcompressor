@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -218,6 +219,16 @@ func (s *WebPService) CompressFrames(ctx context.Context, frames []*domain.Frame
 func (s *WebPService) AssembleAnimation(ctx context.Context, frames []*domain.FrameInfo, outputPath string) error {
 	s.logger.Info("开始重新组装动画", "output", outputPath)
 
+	// 确保输出目录存在
+	outputDir := filepath.Dir(outputPath)
+	if outputDir != "." && outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return errors.Wrap(err, errors.ErrorTypeIO, "CREATE_OUTPUT_DIR",
+				fmt.Sprintf("创建输出目录失败: %s", outputDir))
+		}
+		s.logger.Debug("创建输出目录", "dir", outputDir)
+	}
+
 	// 验证所有帧文件是否存在
 	for _, frame := range frames {
 		if !s.fileManager.FileExists(frame.Path) {
@@ -247,21 +258,20 @@ func (s *WebPService) AssembleAnimation(ctx context.Context, frames []*domain.Fr
 			blendStr = "+b"
 		}
 
-		// 正确的webpmux格式：file_i+di+xi+yi+mi+bi
-		// 参数直接附加到文件名后面，中间没有空格
-		frameWithArgs := fmt.Sprintf("%s+%d+%d+%d+%d%s",
-			frame.Path,
+		// 正确的webpmux格式：file_i +di+xi+yi+mi+bi
+		// 文件路径和参数应该分别作为独立的参数
+		frameParams := fmt.Sprintf("+%d+%d+%d+%d%s",
 			int(frame.Duration/time.Millisecond),
 			frame.X, frame.Y,
 			int(frame.Dispose), blendStr)
 
-		args = append(args, "-frame", frameWithArgs)
+		args = append(args, "-frame", frame.Path, frameParams)
 
 		// 添加调试信息
 		s.logger.Debug("添加帧参数",
 			"index", frame.Index,
 			"path", frame.Path,
-			"frame_with_args", frameWithArgs,
+			"frame_params", frameParams,
 			"duration_ms", int(frame.Duration/time.Millisecond),
 			"x", frame.X,
 			"y", frame.Y,
