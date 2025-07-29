@@ -36,14 +36,11 @@ func NewLogger(cfg *config.LoggingConfig) (Logger, error) {
 	level := parseLogLevel(cfg.Level)
 
 	var writer io.Writer
-	switch strings.ToLower(cfg.Output) {
-	case "stdout":
+	if cfg.OutputFile == "" {
 		writer = os.Stdout
-	case "stderr":
-		writer = os.Stderr
-	default:
+	} else {
 		// 文件输出
-		file, err := openLogFile(cfg.Output)
+		file, err := openLogFile(cfg.OutputFile)
 		if err != nil {
 			return nil, fmt.Errorf("打开日志文件失败: %w", err)
 		}

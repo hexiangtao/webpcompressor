@@ -44,7 +44,8 @@ func (s *WebPService) CompressAnimation(ctx context.Context, inputPath, outputPa
 	opLogger := logger.NewOperationLogger(s.logger, "WebP动画压缩").
 		WithContext("input", inputPath).
 		WithContext("output", outputPath).
-		WithContext("quality", config.Quality)
+		WithContext("quality", config.Quality).
+		WithContext("parallel", config.EnableParallel)
 
 	opLogger.Start()
 	startTime := time.Now()
@@ -104,11 +105,25 @@ func (s *WebPService) CompressAnimation(ctx context.Context, inputPath, outputPa
 		compressedSize = 0
 	}
 
+	// 计算使用的并行工作者数量
+	parallelWorkers := 1 // 默认顺序处理
+	if config.EnableParallel && len(animInfo.Frames) > 1 {
+		maxWorkers := config.MaxConcurrency
+		if maxWorkers <= 0 {
+			maxWorkers = s.config.App.MaxConcurrency
+		}
+		if maxWorkers > len(animInfo.Frames) {
+			maxWorkers = len(animInfo.Frames)
+		}
+		parallelWorkers = maxWorkers
+	}
+
 	result := &domain.CompressResult{
 		OriginalSize:    originalSize,
 		CompressedSize:  compressedSize,
 		ProcessingTime:  time.Since(startTime),
 		FramesProcessed: len(animInfo.Frames),
+		ParallelWorkers: parallelWorkers,
 	}
 	result.CalculateCompressionRatio()
 
@@ -120,6 +135,7 @@ func (s *WebPService) CompressAnimation(ctx context.Context, inputPath, outputPa
 		"compression_ratio", fmt.Sprintf("%.1f%%", result.CompressionRatio),
 		"frames", result.FramesProcessed,
 		"duration", result.ProcessingTime,
+		"parallel_workers", result.ParallelWorkers,
 	)
 
 	return result, nil
@@ -175,43 +191,113 @@ func (s *WebPService) ExtractFrames(ctx context.Context, inputPath string, outpu
 
 // CompressFrames 压缩帧
 func (s *WebPService) CompressFrames(ctx context.Context, frames []*domain.FrameInfo, config *domain.CompressionConfig) error {
-	s.logger.Info("开始压缩帧", "total_frames", len(frames), "quality", config.Quality)
+	if config.EnableParallel && len(frames) > 1 {
+		return s.CompressFramesParallel(ctx, frames, config)
+	}
+	return s.compressFramesSequential(ctx, frames, config)
+}
+
+// CompressFramesParallel 并行压缩帧
+func (s *WebPService) CompressFramesParallel(ctx context.Context, frames []*domain.FrameInfo, config *domain.CompressionConfig) error {
+	s.logger.Info("开始并行压缩帧",
+		"total_frames", len(frames),
+		"quality", config.Quality,
+		"max_concurrency", config.MaxConcurrency,
+	)
+
+	// 限制并发数
+	maxWorkers := config.MaxConcurrency
+	if maxWorkers <= 0 {
+		maxWorkers = s.config.App.MaxConcurrency
+	}
+	if maxWorkers > len(frames) {
+		maxWorkers = len(frames)
+	}
+
+	// 创建工作池
+	workerPool := domain.NewWorkerPool(maxWorkers)
+
+	// 创建帧处理器
+	frameProcessor := func(ctx context.Context, frame *domain.FrameInfo) error {
+		return s.compressFrame(ctx, frame, config)
+	}
+
+	// 启动工作池
+	workerPool.Start(ctx, frameProcessor)
+
+	// 提交所有帧任务
+	for _, frame := range frames {
+		workerPool.Submit(frame)
+	}
+
+	// 关闭任务队列
+	workerPool.Close()
+
+	// 等待所有任务完成
+	errors := workerPool.Wait()
+
+	// 检查是否有错误
+	if len(errors) > 0 {
+		s.logger.Error("并行压缩出现错误", "error_count", len(errors))
+		return errors[0] // 返回第一个错误
+	}
+
+	s.logger.Info("并行压缩完成",
+		"workers", maxWorkers,
+		"frames", len(frames),
+	)
+
+	return nil
+}
+
+// compressFramesSequential 顺序压缩帧（原有逻辑）
+func (s *WebPService) compressFramesSequential(ctx context.Context, frames []*domain.FrameInfo, config *domain.CompressionConfig) error {
+	s.logger.Info("开始顺序压缩帧", "total_frames", len(frames), "quality", config.Quality)
 
 	progressLogger := logger.NewProgressLogger(s.logger, len(frames), "压缩帧")
 
 	for i, frame := range frames {
-		compressedPath := strings.Replace(frame.Path, "frame_", "frame_compressed_", 1)
-
-		// 检查输入文件是否存在
-		if !s.fileManager.FileExists(frame.Path) {
-			return errors.New(errors.ErrorTypeIO, "INPUT_FRAME_NOT_FOUND",
-				fmt.Sprintf("输入帧文件不存在: %s", frame.Path))
+		if err := s.compressFrame(ctx, frame, config); err != nil {
+			return err
 		}
-
-		args := s.buildCompressionArgs(config, frame.Path, compressedPath)
-
-		err := s.toolExecutor.ExecuteCommand(ctx, "cwebp", args...)
-		if err != nil {
-			return errors.Wrapf(err, errors.ErrorTypeExecution, "COMPRESS_FRAME",
-				"压缩第%d帧失败", frame.Index)
-		}
-
-		// 检查压缩后的文件是否成功创建
-		if !s.fileManager.FileExists(compressedPath) {
-			return errors.New(errors.ErrorTypeExecution, "COMPRESSED_FRAME_NOT_CREATED",
-				fmt.Sprintf("第%d帧压缩文件未成功创建: %s", frame.Index, compressedPath))
-		}
-
-		frame.Path = compressedPath
-		s.logger.Debug("压缩帧成功",
-			"index", frame.Index,
-			"input", frame.Path,
-			"output", compressedPath,
-		)
 		progressLogger.Update(i + 1)
 	}
 
 	progressLogger.Finish()
+	return nil
+}
+
+// compressFrame 压缩单个帧
+func (s *WebPService) compressFrame(ctx context.Context, frame *domain.FrameInfo, config *domain.CompressionConfig) error {
+	// 检查输入文件是否存在
+	if !s.fileManager.FileExists(frame.Path) {
+		return errors.New(errors.ErrorTypeIO, "INPUT_FRAME_NOT_FOUND",
+			fmt.Sprintf("输入帧文件不存在: %s", frame.Path))
+	}
+
+	compressedPath := strings.Replace(frame.Path, "frame_", "frame_compressed_", 1)
+
+	args := s.buildCompressionArgs(config, frame.Path, compressedPath)
+
+	err := s.toolExecutor.ExecuteCommand(ctx, "cwebp", args...)
+	if err != nil {
+		return errors.Wrapf(err, errors.ErrorTypeExecution, "COMPRESS_FRAME",
+			"压缩第%d帧失败", frame.Index)
+	}
+
+	// 检查压缩后的文件是否成功创建
+	if !s.fileManager.FileExists(compressedPath) {
+		return errors.New(errors.ErrorTypeExecution, "COMPRESSED_FRAME_NOT_CREATED",
+			fmt.Sprintf("第%d帧压缩文件未成功创建: %s", frame.Index, compressedPath))
+	}
+
+	frame.Path = compressedPath
+
+	s.logger.Debug("压缩帧成功",
+		"index", frame.Index,
+		"output", compressedPath,
+	)
+
 	return nil
 }
 
@@ -430,11 +516,11 @@ func (s *WebPService) validateInput(inputPath, outputPath string, config *domain
 
 	// 检查文件大小
 	if size, err := s.fileManager.GetFileSize(inputPath); err == nil {
-		if size > s.config.Processing.MaxFileSize {
+		if size > s.config.Advanced.OptimizationRules.MaxFileSize {
 			return errors.New(errors.ErrorTypeValidation, "FILE_TOO_LARGE",
 				fmt.Sprintf("文件大小超过限制: %s > %s",
 					formatFileSize(size),
-					formatFileSize(s.config.Processing.MaxFileSize)))
+					formatFileSize(s.config.Advanced.OptimizationRules.MaxFileSize)))
 		}
 	}
 

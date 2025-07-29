@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -49,6 +50,8 @@ type CompressionConfig struct {
 	Preset         string `json:"preset"`          // 预设
 	Lossless       bool   `json:"lossless"`        // 无损压缩
 	AlphaQuality   int    `json:"alpha_quality"`   // Alpha质量
+	EnableParallel bool   `json:"enable_parallel"` // 启用并行处理
+	MaxConcurrency int    `json:"max_concurrency"` // 最大并发数
 }
 
 // DefaultCompressionConfig 返回默认压缩配置
@@ -60,6 +63,8 @@ func DefaultCompressionConfig(quality int) *CompressionConfig {
 		Preset:         "photo",
 		Lossless:       false,
 		AlphaQuality:   quality / 2,
+		EnableParallel: true, // 默认启用并行处理
+		MaxConcurrency: 4,    // 默认4个并发
 	}
 }
 
@@ -70,6 +75,7 @@ type CompressResult struct {
 	CompressionRatio float64       `json:"compression_ratio"`
 	ProcessingTime   time.Duration `json:"processing_time"`
 	FramesProcessed  int           `json:"frames_processed"`
+	ParallelWorkers  int           `json:"parallel_workers"` // 使用的并行工作者数量
 }
 
 // CalculateCompressionRatio 计算压缩率
@@ -78,6 +84,92 @@ func (r *CompressResult) CalculateCompressionRatio() {
 		r.CompressionRatio = float64(r.CompressedSize) / float64(r.OriginalSize) * 100
 	}
 }
+
+// ParallelProcessor 并行处理器接口
+type ParallelProcessor interface {
+	// ProcessFramesParallel 并行处理帧
+	ProcessFramesParallel(ctx context.Context, frames []*FrameInfo, processor FrameProcessor, maxWorkers int) error
+}
+
+// FrameProcessor 帧处理器函数类型
+type FrameProcessor func(ctx context.Context, frame *FrameInfo) error
+
+// WorkerPool 工作池
+type WorkerPool struct {
+	maxWorkers int
+	jobs       chan *FrameInfo
+	results    chan error
+	wg         sync.WaitGroup
+}
+
+// NewWorkerPool 创建工作池
+func NewWorkerPool(maxWorkers int) *WorkerPool {
+	return &WorkerPool{
+		maxWorkers: maxWorkers,
+		jobs:       make(chan *FrameInfo, maxWorkers*2),
+		results:    make(chan error, maxWorkers*2),
+	}
+}
+
+// Start 启动工作池
+func (wp *WorkerPool) Start(ctx context.Context, processor FrameProcessor) {
+	for i := 0; i < wp.maxWorkers; i++ {
+		wp.wg.Add(1)
+		go wp.worker(ctx, processor)
+	}
+}
+
+// Submit 提交任务
+func (wp *WorkerPool) Submit(frame *FrameInfo) {
+	wp.jobs <- frame
+}
+
+// Close 关闭工作池
+func (wp *WorkerPool) Close() {
+	close(wp.jobs)
+}
+
+// Wait 等待所有任务完成
+func (wp *WorkerPool) Wait() []error {
+	wp.wg.Wait()
+	close(wp.results)
+
+	var errors []error
+	for err := range wp.results {
+		if err != nil {
+			errors = append(errors, err)
+		}
+	}
+	return errors
+}
+
+// worker 工作者
+func (wp *WorkerPool) worker(ctx context.Context, processor FrameProcessor) {
+	defer wp.wg.Done()
+
+	for frame := range wp.jobs {
+		select {
+		case <-ctx.Done():
+			wp.results <- ctx.Err()
+			return
+		default:
+			err := processor(ctx, frame)
+			wp.results <- err
+		}
+	}
+}
+
+// BatchProcessor 批量处理器接口
+type BatchProcessor interface {
+	// ProcessBatch 批量处理多个文件
+	ProcessBatch(ctx context.Context, inputFiles []string, config *CompressionConfig) ([]*CompressResult, error)
+
+	// ProcessBatchWithProgress 批量处理并提供进度回调
+	ProcessBatchWithProgress(ctx context.Context, inputFiles []string, config *CompressionConfig, progressCallback ProgressCallback) ([]*CompressResult, error)
+}
+
+// ProgressCallback 进度回调函数类型
+type ProgressCallback func(completed, total int, currentFile string)
 
 // WebPProcessor 定义WebP处理接口
 type WebPProcessor interface {
@@ -89,6 +181,9 @@ type WebPProcessor interface {
 
 	// CompressFrames 压缩帧
 	CompressFrames(ctx context.Context, frames []*FrameInfo, config *CompressionConfig) error
+
+	// CompressFramesParallel 并行压缩帧
+	CompressFramesParallel(ctx context.Context, frames []*FrameInfo, config *CompressionConfig) error
 
 	// AssembleAnimation 重新组装动画
 	AssembleAnimation(ctx context.Context, frames []*FrameInfo, outputPath string) error
