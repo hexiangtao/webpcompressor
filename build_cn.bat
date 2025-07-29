@@ -20,7 +20,7 @@ goto invalid
 :build_standard
 echo.
 echo 构建标准版...
-go build -o webpcompressor.exe main.go
+go build -o webpcompressor.exe cmd/webpcompressor/main.go
 if %ERRORLEVEL% EQU 0 (
     echo 标准版构建完成: webpcompressor.exe
 ) else (
@@ -43,7 +43,7 @@ goto end
 :build_both
 echo.
 echo 构建标准版...
-go build -o webpcompressor.exe main.go
+go build -o webpcompressor.exe cmd/webpcompressor/main.go
 if %ERRORLEVEL% EQU 0 (
     echo 标准版构建完成: webpcompressor.exe
 ) else (

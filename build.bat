@@ -20,7 +20,7 @@ goto invalid
 :build_standard
 echo.
 echo 🔧 Building Standard Version...
-go build -o webpcompressor.exe main.go
+go build -o webpcompressor.exe cmd/webpcompressor/main.go
 if %ERRORLEVEL% EQU 0 (
     echo ✅ Standard version built: webpcompressor.exe
 ) else (
@@ -43,7 +43,7 @@ goto end
 :build_both
 echo.
 echo 🔧 Building Standard Version...
-go build -o webpcompressor.exe main.go
+go build -o webpcompressor.exe cmd/webpcompressor/main.go
 if %ERRORLEVEL% EQU 0 (
     echo ✅ Standard version built: webpcompressor.exe
 ) else (
