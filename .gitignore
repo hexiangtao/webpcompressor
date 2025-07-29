@@ -1,3 +1,5 @@
+# WebP Compressor v2.0 - .gitignore
+
 # 构建产物目录
 bin/
 dist/
