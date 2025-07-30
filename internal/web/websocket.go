@@ -44,13 +44,32 @@ func (s *Server) handleProgressWebSocket(c *gin.Context) {
 	})
 
 	// 启动ping定时器
-	ticker := time.NewTicker(54 * time.Second)
+	ticker := time.NewTicker(30 * time.Second) // 减少ping频率
 	defer ticker.Stop()
 
 	// 发送初始任务状态
 	if task, err := s.taskManager.GetTask(taskID); err == nil {
 		s.sendTaskUpdate(conn, task)
 	}
+
+	// 创建退出通道
+	done := make(chan struct{})
+
+	// 启动消息读取协程
+	go func() {
+		defer close(done)
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					s.logger.Error("WebSocket意外关闭", "task_id", taskID, "error", err)
+				} else {
+					s.logger.Debug("WebSocket连接关闭", "task_id", taskID)
+				}
+				return
+			}
+		}
+	}()
 
 	// 处理消息循环
 	for {
@@ -73,17 +92,9 @@ func (s *Server) handleProgressWebSocket(c *gin.Context) {
 				return
 			}
 
-		default:
-			// 检查是否有来自客户端的消息
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					s.logger.Error("WebSocket意外关闭", "task_id", taskID, "error", err)
-				} else {
-					s.logger.Debug("WebSocket连接关闭", "task_id", taskID)
-				}
-				return
-			}
+		case <-done:
+			s.logger.Debug("WebSocket读取协程退出", "task_id", taskID)
+			return
 		}
 	}
 }

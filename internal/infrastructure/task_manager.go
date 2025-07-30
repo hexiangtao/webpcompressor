@@ -244,7 +244,7 @@ func (p *ProgressReporter) Subscribe(taskID string) <-chan domain.TaskInfo {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	ch := make(chan domain.TaskInfo, 10)
+	ch := make(chan domain.TaskInfo, 100) // 增加缓冲区大小从10到100
 	p.subscribers[taskID] = append(p.subscribers[taskID], ch)
 
 	p.logger.Debug("订阅任务进度", "task_id", taskID)

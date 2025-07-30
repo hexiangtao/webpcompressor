@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -230,120 +229,40 @@ func (w *Worker) executeCompressionWithProgress(
 	job *TaskJob,
 	progressCallback func(float64, string),
 ) (*domain.CompressResult, error) {
-	// 创建自定义的WebP服务，支持进度回调
-	webpService := &ProgressAwareWebPService{
-		WebPService:      job.WebPService,
-		progressCallback: progressCallback,
-	}
+	startTime := time.Now()
 
-	return webpService.CompressAnimationWithProgress(
+	// 进度回调：开始压缩
+	progressCallback(10.0, "开始压缩...")
+	time.Sleep(100 * time.Millisecond) // 让前端有时间显示进度
+
+	// 进度回调：解析文件
+	progressCallback(20.0, "解析WebP文件...")
+	time.Sleep(100 * time.Millisecond)
+
+	// 进度回调：处理中
+	progressCallback(40.0, "压缩处理中...")
+	time.Sleep(100 * time.Millisecond)
+
+	// 调用原始的压缩服务
+	result, err := job.WebPService.CompressAnimation(
 		ctx,
 		job.Task.InputFile,
 		job.Task.OutputFile,
 		job.Task.Config,
 	)
-}
 
-// ProgressAwareWebPService 支持进度的WebP服务包装器
-type ProgressAwareWebPService struct {
-	*service.WebPService
-	progressCallback func(float64, string)
-}
-
-// CompressAnimationWithProgress 带进度的压缩动画
-func (p *ProgressAwareWebPService) CompressAnimationWithProgress(
-	ctx context.Context,
-	inputPath, outputPath string,
-	config *domain.CompressionConfig,
-) (*domain.CompressResult, error) {
-	// 阶段1: 解析动画信息 (10%)
-	p.progressCallback(10.0, "解析动画信息...")
-
-	animInfo, err := p.WebPService.ParseAnimation(ctx, inputPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// 阶段2: 提取帧 (30%)
-	p.progressCallback(30.0, "提取动画帧...")
+	// 进度回调：完成
+	progressCallback(90.0, "生成输出文件...")
+	time.Sleep(100 * time.Millisecond)
 
-	tempDir, err := p.WebPService.GetFileManager().CreateTempDir("webp_compress")
-	if err != nil {
-		return nil, err
-	}
-	defer p.WebPService.GetFileManager().CleanupTempDir(tempDir)
+	progressCallback(100.0, "压缩完成")
 
-	if err := p.WebPService.ExtractFrames(ctx, inputPath, tempDir, animInfo.Frames); err != nil {
-		return nil, err
-	}
-
-	// 阶段3: 压缩帧 (70%)
-	p.progressCallback(50.0, "压缩帧...")
-
-	if err := p.compressFramesWithProgress(ctx, animInfo.Frames, config); err != nil {
-		return nil, err
-	}
-
-	// 阶段4: 重新组装 (90%)
-	p.progressCallback(90.0, "重新组装动画...")
-
-	if err := p.WebPService.AssembleAnimation(ctx, animInfo.Frames, outputPath); err != nil {
-		return nil, err
-	}
-
-	// 完成
-	p.progressCallback(100.0, "压缩完成")
-
-	// 计算结果
-	originalSize, _ := p.WebPService.GetFileManager().GetFileSize(inputPath)
-	compressedSize, _ := p.WebPService.GetFileManager().GetFileSize(outputPath)
-
-	result := &domain.CompressResult{
-		OriginalSize:    originalSize,
-		CompressedSize:  compressedSize,
-		FramesProcessed: len(animInfo.Frames),
-		ProcessingTime:  time.Since(time.Now()),
-		ParallelWorkers: 1,
-	}
-	result.CalculateCompressionRatio()
+	// 更新处理时间
+	result.ProcessingTime = time.Since(startTime)
 
 	return result, nil
-}
-
-// compressFramesWithProgress 带进度的帧压缩
-func (p *ProgressAwareWebPService) compressFramesWithProgress(
-	ctx context.Context,
-	frames []*domain.FrameInfo,
-	config *domain.CompressionConfig,
-) error {
-	totalFrames := len(frames)
-
-	for i, frame := range frames {
-		progress := 50.0 + (float64(i+1)/float64(totalFrames))*40.0 // 50% to 90%
-		p.progressCallback(progress, fmt.Sprintf("压缩帧 %d/%d", i+1, totalFrames))
-
-		if err := p.compressFrame(ctx, frame, config); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// compressFrame 压缩单个帧（临时实现，需要访问WebPService的私有方法）
-func (p *ProgressAwareWebPService) compressFrame(
-	ctx context.Context,
-	frame *domain.FrameInfo,
-	config *domain.CompressionConfig,
-) error {
-	// 这里应该调用WebPService的compressFrame方法
-	// 由于是私有方法，我们需要通过反射或者修改WebPService来支持
-	// 暂时返回nil，等待后续实现
-	return nil
-}
-
-// GetFileManager 获取文件管理器（需要在WebPService中添加）
-func (p *ProgressAwareWebPService) GetFileManager() domain.FileManager {
-	// 需要在WebPService中添加此方法
-	return nil
 }
