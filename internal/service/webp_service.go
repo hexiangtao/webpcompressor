@@ -507,6 +507,11 @@ func (s *WebPService) buildCompressionArgs(config *domain.CompressionConfig, inp
 	return args
 }
 
+// GetFileManager 获取文件管理器
+func (s *WebPService) GetFileManager() domain.FileManager {
+	return s.fileManager
+}
+
 // validateInput 验证输入参数
 func (s *WebPService) validateInput(inputPath, outputPath string, config *domain.CompressionConfig) error {
 	// 检查输入文件

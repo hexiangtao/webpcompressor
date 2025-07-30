@@ -3,9 +3,11 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config 应用程序配置
@@ -15,24 +17,29 @@ type Config struct {
 	Processing ProcessingConfig `json:"processing"`
 	Logging    LoggingConfig    `json:"logging"`
 	Advanced   AdvancedConfig   `json:"advanced"`
+	Web        WebConfig        `json:"web"`
 }
 
 // AppConfig 应用程序基础配置
 type AppConfig struct {
-	Name           string `json:"name"`
-	Version        string `json:"version"`
-	MaxConcurrency int    `json:"max_concurrency"`
-	TempDirPrefix  string `json:"temp_dir_prefix"`
-	DefaultQuality int    `json:"default_quality"`
+	Name           string        `json:"name"`
+	Version        string        `json:"version"`
+	MaxConcurrency int           `json:"max_concurrency"`
+	TempDirPrefix  string        `json:"temp_dir_prefix"`
+	DefaultQuality int           `json:"default_quality"`
+	TempDir        string        `json:"temp_dir"` // 临时目录
+	Timeout        time.Duration `json:"timeout"`  // 操作超时时间
 }
 
 // ToolsConfig 工具配置
 type ToolsConfig struct {
-	ToolsPath      string `json:"tools_path"`
-	WebpmuxPath    string `json:"webpmux_path"`
-	CwebpPath      string `json:"cwebp_path"`
-	DwebpPath      string `json:"dwebp_path"`
-	CommandTimeout int    `json:"command_timeout"` // 秒
+	ToolsPath      string            `json:"tools_path"`
+	WebpmuxPath    string            `json:"webpmux_path"`
+	CwebpPath      string            `json:"cwebp_path"`
+	DwebpPath      string            `json:"dwebp_path"`
+	CommandTimeout int               `json:"command_timeout"` // 秒
+	UseEmbedded    bool              `json:"use_embedded"`    // 是否使用嵌入式工具
+	ToolPaths      map[string]string `json:"tool_paths"`      // 工具路径映射
 }
 
 // ProcessingConfig 处理配置
@@ -44,6 +51,7 @@ type ProcessingConfig struct {
 	DefaultPreset      string `json:"default_preset"`
 	EnableProgressBar  bool   `json:"enable_progress_bar"`
 	EnableOptimization bool   `json:"enable_optimization"`
+	MaxFileSize        int64  `json:"max_file_size"` // 最大文件大小限制
 }
 
 // LoggingConfig 日志配置
@@ -108,6 +116,25 @@ type PerformanceConfig struct {
 	CPUUsageLimit       int  `json:"cpu_usage_limit"` // 0-100%
 }
 
+// WebConfig Web服务配置
+type WebConfig struct {
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	EnableTLS          bool   `json:"enable_tls"`
+	TLSCert            string `json:"tls_cert"`
+	TLSKey             string `json:"tls_key"`
+	MaxFileSize        int64  `json:"max_file_size"` // bytes
+	UploadDir          string `json:"upload_dir"`
+	OutputDir          string `json:"output_dir"`
+	MaxConcurrentTasks int    `json:"max_concurrent_tasks"`
+	TaskTimeout        int    `json:"task_timeout"`     // seconds
+	CleanupInterval    int    `json:"cleanup_interval"` // minutes
+	EnableAuth         bool   `json:"enable_auth"`
+	AuthToken          string `json:"auth_token"`
+	EnableCORS         bool   `json:"enable_cors"`
+	AllowedOrigins     string `json:"allowed_origins"`
+}
+
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
@@ -117,6 +144,8 @@ func DefaultConfig() *Config {
 			MaxConcurrency: runtime.NumCPU(),
 			TempDirPrefix:  "webpcompressor",
 			DefaultQuality: 75,
+			TempDir:        "",
+			Timeout:        5 * time.Minute,
 		},
 		Tools: ToolsConfig{
 			ToolsPath:      ".",
@@ -124,6 +153,8 @@ func DefaultConfig() *Config {
 			CwebpPath:      "cwebp",
 			DwebpPath:      "dwebp",
 			CommandTimeout: 300, // 5分钟
+			UseEmbedded:    false,
+			ToolPaths:      make(map[string]string),
 		},
 		Processing: ProcessingConfig{
 			EnableParallel:     true,
@@ -133,6 +164,7 @@ func DefaultConfig() *Config {
 			DefaultPreset:      "photo",
 			EnableProgressBar:  true,
 			EnableOptimization: true,
+			MaxFileSize:        100 * 1024 * 1024, // 100MB
 		},
 		Logging: LoggingConfig{
 			Level:      "info",
@@ -157,6 +189,23 @@ func DefaultConfig() *Config {
 				EnableCPUThrottling: false,
 				CPUUsageLimit:       80,
 			},
+		},
+		Web: WebConfig{
+			Host:               "0.0.0.0",
+			Port:               8080,
+			EnableTLS:          false,
+			TLSCert:            "",
+			TLSKey:             "",
+			MaxFileSize:        10 * 1024 * 1024, // 10MB
+			UploadDir:          "./uploads",
+			OutputDir:          "./outputs",
+			MaxConcurrentTasks: 10,
+			TaskTimeout:        300, // 5分钟
+			CleanupInterval:    60,  // 1小时
+			EnableAuth:         false,
+			AuthToken:          "",
+			EnableCORS:         true,
+			AllowedOrigins:     "*",
 		},
 	}
 }
@@ -272,6 +321,17 @@ func (c *Config) LoadFromEnv() {
 		}
 	}
 
+	// 应用程序高级配置
+	if val := os.Getenv("WEBP_TEMP_DIR"); val != "" {
+		c.App.TempDir = val
+	}
+
+	if val := os.Getenv("WEBP_TIMEOUT"); val != "" {
+		if duration, err := time.ParseDuration(val); err == nil {
+			c.App.Timeout = duration
+		}
+	}
+
 	// 工具配置
 	if val := os.Getenv("WEBP_TOOLS_PATH"); val != "" {
 		c.Tools.ToolsPath = val
@@ -281,6 +341,10 @@ func (c *Config) LoadFromEnv() {
 		if num, err := strconv.Atoi(val); err == nil && num > 0 {
 			c.Tools.CommandTimeout = num
 		}
+	}
+
+	if val := os.Getenv("WEBP_USE_EMBEDDED"); val != "" {
+		c.Tools.UseEmbedded = strings.ToLower(val) == "true"
 	}
 
 	// 处理配置
@@ -294,6 +358,12 @@ func (c *Config) LoadFromEnv() {
 
 	if val := os.Getenv("WEBP_DEFAULT_PRESET"); val != "" {
 		c.Processing.DefaultPreset = val
+	}
+
+	if val := os.Getenv("WEBP_MAX_FILE_SIZE"); val != "" {
+		if num, err := strconv.ParseInt(val, 10, 64); err == nil && num > 0 {
+			c.Processing.MaxFileSize = num
+		}
 	}
 
 	// 日志配置
@@ -310,6 +380,63 @@ func (c *Config) LoadFromEnv() {
 		if num, err := strconv.Atoi(val); err == nil && num > 0 {
 			c.Advanced.PerformanceConfig.MaxMemoryUsage = num
 		}
+	}
+
+	// Web配置
+	if val := os.Getenv("WEBP_WEB_HOST"); val != "" {
+		c.Web.Host = val
+	}
+	if val := os.Getenv("WEBP_WEB_PORT"); val != "" {
+		if num, err := strconv.Atoi(val); err == nil && num > 0 {
+			c.Web.Port = num
+		}
+	}
+	if val := os.Getenv("WEBP_WEB_ENABLE_TLS"); val != "" {
+		c.Web.EnableTLS = strings.ToLower(val) == "true"
+	}
+	if val := os.Getenv("WEBP_WEB_TLS_CERT"); val != "" {
+		c.Web.TLSCert = val
+	}
+	if val := os.Getenv("WEBP_WEB_TLS_KEY"); val != "" {
+		c.Web.TLSKey = val
+	}
+	if val := os.Getenv("WEBP_WEB_MAX_FILE_SIZE"); val != "" {
+		if num, err := strconv.ParseInt(val, 10, 64); err == nil && num > 0 {
+			c.Web.MaxFileSize = num
+		}
+	}
+	if val := os.Getenv("WEBP_WEB_UPLOAD_DIR"); val != "" {
+		c.Web.UploadDir = val
+	}
+	if val := os.Getenv("WEBP_WEB_OUTPUT_DIR"); val != "" {
+		c.Web.OutputDir = val
+	}
+	if val := os.Getenv("WEBP_WEB_MAX_CONCURRENT_TASKS"); val != "" {
+		if num, err := strconv.Atoi(val); err == nil && num > 0 {
+			c.Web.MaxConcurrentTasks = num
+		}
+	}
+	if val := os.Getenv("WEBP_WEB_TASK_TIMEOUT"); val != "" {
+		if num, err := strconv.Atoi(val); err == nil && num > 0 {
+			c.Web.TaskTimeout = num
+		}
+	}
+	if val := os.Getenv("WEBP_WEB_CLEANUP_INTERVAL"); val != "" {
+		if num, err := strconv.Atoi(val); err == nil && num > 0 {
+			c.Web.CleanupInterval = num
+		}
+	}
+	if val := os.Getenv("WEBP_WEB_ENABLE_AUTH"); val != "" {
+		c.Web.EnableAuth = strings.ToLower(val) == "true"
+	}
+	if val := os.Getenv("WEBP_WEB_AUTH_TOKEN"); val != "" {
+		c.Web.AuthToken = val
+	}
+	if val := os.Getenv("WEBP_WEB_ENABLE_CORS"); val != "" {
+		c.Web.EnableCORS = strings.ToLower(val) == "true"
+	}
+	if val := os.Getenv("WEBP_WEB_ALLOWED_ORIGINS"); val != "" {
+		c.Web.AllowedOrigins = val
 	}
 }
 
@@ -361,6 +488,23 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("无效的默认预设: %s，支持的预设: %v", c.Processing.DefaultPreset, validPresets)
 	}
 
+	// 验证Web配置
+	if c.Web.Port <= 0 {
+		return fmt.Errorf("Web服务端口必须大于0，当前值: %d", c.Web.Port)
+	}
+	if c.Web.MaxFileSize <= 0 {
+		return fmt.Errorf("Web服务最大文件大小必须大于0，当前值: %d", c.Web.MaxFileSize)
+	}
+	if c.Web.MaxConcurrentTasks <= 0 {
+		return fmt.Errorf("Web服务最大并发任务数必须大于0，当前值: %d", c.Web.MaxConcurrentTasks)
+	}
+	if c.Web.TaskTimeout <= 0 {
+		return fmt.Errorf("Web服务任务超时时间必须大于0，当前值: %d", c.Web.TaskTimeout)
+	}
+	if c.Web.CleanupInterval <= 0 {
+		return fmt.Errorf("Web服务清理间隔必须大于0，当前值: %d", c.Web.CleanupInterval)
+	}
+
 	return nil
 }
 
@@ -379,6 +523,37 @@ func (c *Config) GetQualityProfile(name string) (QualityProfile, bool) {
 // IsParallelEnabled 检查是否启用并行处理
 func (c *Config) IsParallelEnabled() bool {
 	return c.Processing.EnableParallel && c.Processing.MaxWorkers > 1
+}
+
+// GetToolPath 获取工具路径
+func (c *Config) GetToolPath(toolName string) string {
+	// 首先检查工具路径映射
+	if path, exists := c.Tools.ToolPaths[toolName]; exists && path != "" {
+		return path
+	}
+
+	// 然后检查具体的工具路径配置
+	switch toolName {
+	case "webpmux":
+		if c.Tools.WebpmuxPath != "" {
+			return c.Tools.WebpmuxPath
+		}
+	case "cwebp":
+		if c.Tools.CwebpPath != "" {
+			return c.Tools.CwebpPath
+		}
+	case "dwebp":
+		if c.Tools.DwebpPath != "" {
+			return c.Tools.DwebpPath
+		}
+	}
+
+	// 最后回退到基础路径
+	if c.Tools.ToolsPath != "" && c.Tools.ToolsPath != "." {
+		return filepath.Join(c.Tools.ToolsPath, toolName)
+	}
+
+	return toolName
 }
 
 // GetEffectiveWorkers 获取有效的工作者数量

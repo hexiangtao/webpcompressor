@@ -2,8 +2,16 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
+)
+
+// 错误定义
+var (
+	ErrTaskQueueFull = errors.New("任务队列已满")
+	ErrTaskNotFound  = errors.New("任务不存在")
+	ErrTaskCancelled = errors.New("任务已取消")
 )
 
 // FrameInfo 表示WebP动画帧信息
@@ -223,4 +231,125 @@ type FileManager interface {
 
 	// CopyFile 复制文件
 	CopyFile(src, dst string) error
+}
+
+// TaskStatus 任务状态
+type TaskStatus string
+
+const (
+	TaskStatusPending    TaskStatus = "pending"
+	TaskStatusProcessing TaskStatus = "processing"
+	TaskStatusCompleted  TaskStatus = "completed"
+	TaskStatusFailed     TaskStatus = "failed"
+	TaskStatusCancelled  TaskStatus = "cancelled"
+)
+
+// TaskInfo 任务信息
+type TaskInfo struct {
+	ID          string                 `json:"id"`
+	Status      TaskStatus             `json:"status"`
+	Progress    float64                `json:"progress"`
+	Message     string                 `json:"message"`
+	InputFile   string                 `json:"input_file"`
+	OutputFile  string                 `json:"output_file"`
+	Config      *CompressionConfig     `json:"config"`
+	Result      *CompressResult        `json:"result,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	StartedAt   *time.Time             `json:"started_at,omitempty"`
+	CompletedAt *time.Time             `json:"completed_at,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// UpdateProgress 更新任务进度
+func (t *TaskInfo) UpdateProgress(progress float64, message string) {
+	t.Progress = progress
+	t.Message = message
+}
+
+// Start 开始任务
+func (t *TaskInfo) Start() {
+	t.Status = TaskStatusProcessing
+	now := time.Now()
+	t.StartedAt = &now
+}
+
+// Complete 完成任务
+func (t *TaskInfo) Complete(result *CompressResult) {
+	t.Status = TaskStatusCompleted
+	t.Progress = 100.0
+	t.Result = result
+	now := time.Now()
+	t.CompletedAt = &now
+}
+
+// Fail 任务失败
+func (t *TaskInfo) Fail(err error) {
+	t.Status = TaskStatusFailed
+	t.Error = err.Error()
+	now := time.Now()
+	t.CompletedAt = &now
+}
+
+// Cancel 取消任务
+func (t *TaskInfo) Cancel() {
+	t.Status = TaskStatusCancelled
+	now := time.Now()
+	t.CompletedAt = &now
+}
+
+// TaskManager 任务管理器接口
+type TaskManager interface {
+	// CreateTask 创建任务
+	CreateTask(inputFile, outputFile string, config *CompressionConfig) (*TaskInfo, error)
+
+	// GetTask 获取任务信息
+	GetTask(taskID string) (*TaskInfo, error)
+
+	// UpdateTask 更新任务
+	UpdateTask(task *TaskInfo) error
+
+	// ListTasks 列出任务
+	ListTasks(limit, offset int) ([]*TaskInfo, error)
+
+	// DeleteTask 删除任务
+	DeleteTask(taskID string) error
+
+	// CleanupOldTasks 清理旧任务
+	CleanupOldTasks(olderThan time.Duration) error
+}
+
+// ProgressReporter 进度报告器接口
+type ProgressReporter interface {
+	// ReportProgress 报告进度
+	ReportProgress(taskID string, progress float64, message string)
+
+	// Subscribe 订阅进度更新
+	Subscribe(taskID string) <-chan TaskInfo
+
+	// Unsubscribe 取消订阅
+	Unsubscribe(taskID string)
+}
+
+// FileUploadInfo 文件上传信息
+type FileUploadInfo struct {
+	Filename     string    `json:"filename"`
+	OriginalName string    `json:"original_name"`
+	Size         int64     `json:"size"`
+	ContentType  string    `json:"content_type"`
+	UploadedAt   time.Time `json:"uploaded_at"`
+	Path         string    `json:"path"`
+}
+
+// WebPStats 统计信息
+type WebPStats struct {
+	TotalTasks      int     `json:"total_tasks"`
+	CompletedTasks  int     `json:"completed_tasks"`
+	FailedTasks     int     `json:"failed_tasks"`
+	ProcessingTasks int     `json:"processing_tasks"`
+	PendingTasks    int     `json:"pending_tasks"`
+	TotalFilesSize  int64   `json:"total_files_size"`
+	TotalSavedBytes int64   `json:"total_saved_bytes"`
+	AverageQuality  float64 `json:"average_quality"`
+	AverageRatio    float64 `json:"average_ratio"`
 }

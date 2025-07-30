@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebP压缩器 - 高效的WebP图像压缩服务</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .hover-scale {
+            transition: transform 0.3s ease;
+        }
+        .hover-scale:hover {
+            transform: scale(1.05);
+        }
+        .drop-zone {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.drag-over {
+            border-color: #4299e1;
+            background-color: #ebf8ff;
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- 导航栏 -->
+    <nav class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-compress-alt text-white text-2xl mr-3"></i>
+                    <span class="text-white text-xl font-bold">WebP压缩器</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="statsBtn" class="text-white hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-chart-bar mr-1"></i>统计
+                    </button>
+                    <button id="helpBtn" class="text-white hover:text-gray-200 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-question-circle mr-1"></i>帮助
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <!-- 欢迎区域 -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 mb-4">
+                🎨 高效的WebP图像压缩
+            </h1>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                上传您的WebP动画文件，我们将为您提供最优的压缩效果，节省空间同时保持质量
+            </p>
+        </div>
+
+        <!-- 上传区域 -->
+        <div class="bg-white rounded-lg shadow-md p-8 mb-8">
+            <div id="uploadZone" class="drop-zone rounded-lg p-12 text-center cursor-pointer">
+                <i class="fas fa-cloud-upload-alt text-6xl text-gray-400 mb-4"></i>
+                <h3 class="text-2xl font-semibold text-gray-700 mb-2">拖拽文件到这里</h3>
+                <p class="text-gray-500 mb-4">或者点击选择WebP文件</p>
+                <input type="file" id="fileInput" accept=".webp" class="hidden">
+                <button id="selectBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium">
+                    <i class="fas fa-file-upload mr-2"></i>选择文件
+                </button>
+            </div>
+        </div>
+
+        <!-- 压缩设置 -->
+        <div id="settingsPanel" class="bg-white rounded-lg shadow-md p-8 mb-8 hidden">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">
+                <i class="fas fa-cog mr-2"></i>压缩设置
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- 质量设置 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        压缩质量: <span id="qualityValue">75</span>%
+                    </label>
+                    <input type="range" id="qualitySlider" min="10" max="100" value="75" 
+                           class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- 预设选择 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">压缩预设</label>
+                    <select id="presetSelect" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="fast">快速 (速度优先)</option>
+                        <option value="balanced" selected>平衡 (推荐)</option>
+                        <option value="quality">高质量 (质量优先)</option>
+                        <option value="web">网页优化</option>
+                    </select>
+                </div>
+
+                <!-- 其他选项 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-4">其他选项</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="losslessCheck" class="mr-2">
+                            <span class="text-sm">无损压缩</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="parallelCheck" checked class="mr-2">
+                            <span class="text-sm">并行处理</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-center mt-8">
+                <button id="compressBtn" class="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-lg font-medium hover-scale">
+                    <i class="fas fa-compress mr-2"></i>开始压缩
+                </button>
+            </div>
+        </div>
+
+        <!-- 进度区域 -->
+        <div id="progressPanel" class="bg-white rounded-lg shadow-md p-8 mb-8 hidden">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">
+                <i class="fas fa-spinner fa-spin mr-2"></i>压缩进度
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">总体进度</span>
+                        <span id="progressPercent" class="text-sm text-gray-500">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <p id="progressMessage" class="text-sm text-gray-600">准备开始...</p>
+                </div>
+                <div class="flex justify-center">
+                    <button id="cancelBtn" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg font-medium">
+                        <i class="fas fa-times mr-2"></i>取消
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果区域 -->
+        <div id="resultPanel" class="bg-white rounded-lg shadow-md p-8 mb-8 hidden">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">
+                <i class="fas fa-check-circle text-green-500 mr-2"></i>压缩完成
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-blue-600" id="originalSize">-</div>
+                    <div class="text-sm text-gray-500">原始大小</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-green-600" id="compressedSize">-</div>
+                    <div class="text-sm text-gray-500">压缩后大小</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-purple-600" id="compressionRatio">-</div>
+                    <div class="text-sm text-gray-500">压缩率</div>
+                </div>
+            </div>
+            <div class="flex justify-center space-x-4">
+                <button id="downloadBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover-scale">
+                    <i class="fas fa-download mr-2"></i>下载压缩文件
+                </button>
+                <button id="newTaskBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium hover-scale">
+                    <i class="fas fa-plus mr-2"></i>新建任务
+                </button>
+            </div>
+        </div>
+
+        <!-- 任务历史 -->
+        <div class="bg-white rounded-lg shadow-md p-8">
+            <h3 class="text-xl font-semibold text-gray-800 mb-6">
+                <i class="fas fa-history mr-2"></i>任务历史
+            </h3>
+            <div id="taskHistory" class="space-y-4">
+                <p class="text-gray-500 text-center py-8">暂无任务历史</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- 统计模态框 -->
+    <div id="statsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">系统统计</h3>
+                <div id="statsContent" class="space-y-4">
+                    <!-- 统计内容将通过JS动态加载 -->
+                </div>
+                <div class="flex justify-end mt-6">
+                    <button id="closeStatsBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 帮助模态框 -->
+    <div id="helpModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden">
+        <div class="flex items-center justify-center min-h-screen">
+            <div class="bg-white rounded-lg p-8 max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">使用帮助</h3>
+                <div class="space-y-4 text-sm text-gray-600">
+                    <div>
+                        <h4 class="font-semibold text-gray-800 mb-2">📁 文件上传</h4>
+                        <p>支持拖拽或点击上传WebP格式的动画文件。最大支持100MB的文件。</p>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800 mb-2">⚙️ 压缩设置</h4>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>压缩质量</strong>: 10-100，数值越高质量越好但文件越大</li>
+                            <li><strong>快速预设</strong>: 优先速度，适合批量处理</li>
+                            <li><strong>平衡预设</strong>: 质量与速度的平衡，推荐使用</li>
+                            <li><strong>高质量预设</strong>: 最佳质量，处理时间较长</li>
+                            <li><strong>网页优化</strong>: 适合网页使用的优化设置</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800 mb-2">🚀 实时进度</h4>
+                        <p>支持WebSocket实时进度显示，您可以随时查看压缩状态和取消任务。</p>
+                    </div>
+                </div>
+                <div class="flex justify-end mt-6">
+                    <button id="closeHelpBtn" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html> 
