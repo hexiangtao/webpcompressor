@@ -102,9 +102,6 @@ func (s *Server) setupMiddleware() {
 	if s.config.Web.EnableAuth {
 		s.router.Use(s.authMiddleware())
 	}
-
-	// 文件大小限制中间件
-	s.router.Use(s.fileSizeLimitMiddleware())
 }
 
 // setupRoutes 设置路由
@@ -124,8 +121,11 @@ func (s *Server) setupRoutes() {
 		api.GET("/info", s.getSystemInfo)
 		api.GET("/stats", s.getStats)
 
-		// 文件上传
-		api.POST("/upload", s.uploadFile)
+		// 文件上传 (带文件大小限制)
+		api.POST("/upload", s.fileSizeLimitMiddleware(), s.uploadFile)
+		api.OPTIONS("/upload", func(c *gin.Context) {
+			c.Status(200)
+		})
 
 		// 任务管理
 		tasks := api.Group("/tasks")
@@ -191,7 +191,7 @@ func (s *Server) Start() error {
 	s.httpServer = &http.Server{
 		Addr:         address,
 		Handler:      s.router,
-		ReadTimeout:  30 * time.Second,
+		ReadTimeout:  300 * time.Second, // 增加到5分钟以支持大文件上传
 		WriteTimeout: time.Duration(s.config.Web.TaskTimeout) * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}

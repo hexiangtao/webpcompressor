@@ -219,7 +219,7 @@ func getDefaultCompressionPresets() map[string]CompressionPreset {
 			Quality:        60,
 			Method:         0,
 			FilterStrength: 60,
-			Preset:         "default",
+			Preset:         "default", // 使用cwebp支持的预设
 			AlphaQuality:   30,
 			Lossless:       false,
 		},
@@ -229,7 +229,7 @@ func getDefaultCompressionPresets() map[string]CompressionPreset {
 			Quality:        75,
 			Method:         4,
 			FilterStrength: 80,
-			Preset:         "photo",
+			Preset:         "photo", // 使用cwebp支持的预设
 			AlphaQuality:   50,
 			Lossless:       false,
 		},
@@ -239,7 +239,7 @@ func getDefaultCompressionPresets() map[string]CompressionPreset {
 			Quality:        90,
 			Method:         6,
 			FilterStrength: 100,
-			Preset:         "photo",
+			Preset:         "photo", // 使用cwebp支持的预设
 			AlphaQuality:   80,
 			Lossless:       false,
 			Sharpness:      2,
@@ -253,7 +253,7 @@ func getDefaultCompressionPresets() map[string]CompressionPreset {
 			Quality:        100,
 			Method:         6,
 			FilterStrength: 100,
-			Preset:         "default",
+			Preset:         "default", // 使用cwebp支持的预设
 			AlphaQuality:   100,
 			Lossless:       true,
 		},
@@ -263,12 +263,31 @@ func getDefaultCompressionPresets() map[string]CompressionPreset {
 			Quality:        70,
 			Method:         4,
 			FilterStrength: 75,
-			Preset:         "default",
+			Preset:         "picture", // 使用cwebp支持的预设
 			AlphaQuality:   40,
 			Lossless:       false,
 			TargetSize:     512 * 1024, // 512KB
 		},
 	}
+}
+
+// MapWebPresetToCwebpPreset 将Web界面预设映射到cwebp预设
+func (c *Config) MapWebPresetToCwebpPreset(webPreset string) string {
+	// 获取预设配置
+	if preset, exists := c.Advanced.CompressionPresets[webPreset]; exists {
+		return preset.Preset
+	}
+
+	// 如果直接是cwebp支持的预设，直接返回
+	validCwebpPresets := []string{"default", "photo", "picture", "drawing", "icon", "text"}
+	for _, validPreset := range validCwebpPresets {
+		if webPreset == validPreset {
+			return webPreset
+		}
+	}
+
+	// 默认返回photo
+	return "photo"
 }
 
 // getDefaultQualityProfiles 获取默认质量配置文件

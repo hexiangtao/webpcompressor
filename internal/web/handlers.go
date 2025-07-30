@@ -60,8 +60,25 @@ func (s *Server) getStats(c *gin.Context) {
 
 // uploadFile 文件上传
 func (s *Server) uploadFile(c *gin.Context) {
+	startTime := time.Now()
+	s.logger.Info("开始文件上传处理", 
+		"content_type", c.GetHeader("Content-Type"),
+		"content_length", c.GetHeader("Content-Length"),
+		"method", c.Request.Method)
+
+	// 设置临时目录为当前工作目录的temp文件夹，避免系统临时目录性能问题
+	tempDir := "./temp"
+	os.MkdirAll(tempDir, 0755)
+	os.Setenv("TMPDIR", tempDir)
+	os.Setenv("TMP", tempDir) 
+	os.Setenv("TEMP", tempDir)
+	
+	s.logger.Info("开始获取FormFile", "temp_dir", tempDir)
+	
+	// 直接使用ShouldBind会更快，避免ParseMultipartForm
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
+		s.logger.Error("获取FormFile失败", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "文件上传失败",
 			"details": err.Error(),
@@ -70,17 +87,22 @@ func (s *Server) uploadFile(c *gin.Context) {
 	}
 	defer file.Close()
 
+	s.logger.Info("获取FormFile完成", "耗时", time.Since(startTime))
+
 	// 验证文件类型
+	validateStart := time.Now()
 	if !s.isValidWebPFile(header.Filename) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "仅支持WebP文件格式",
 		})
 		return
 	}
+	s.logger.Info("文件验证完成", "耗时", time.Since(validateStart))
 
 	// 生成唯一文件名
 	filename := fmt.Sprintf("%s_%s", uuid.New().String(), header.Filename)
 	uploadPath := filepath.Join(s.config.Web.UploadDir, filename)
+	s.logger.Info("生成文件路径", "path", uploadPath)
 
 	// 创建目标文件
 	dst, err := os.Create(uploadPath)
@@ -93,8 +115,11 @@ func (s *Server) uploadFile(c *gin.Context) {
 	}
 	defer dst.Close()
 
-	// 复制文件内容
-	if _, err := io.Copy(dst, file); err != nil {
+	// 复制文件内容 (使用更大的缓冲区提高性能)
+	copyStart := time.Now()
+	buffer := make([]byte, 1024*1024) // 1MB缓冲区
+	copied, err := io.CopyBuffer(dst, file, buffer)
+	if err != nil {
 		s.logger.Error("复制文件内容失败", "error", err)
 		os.Remove(uploadPath) // 清理失败的文件
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -102,6 +127,9 @@ func (s *Server) uploadFile(c *gin.Context) {
 		})
 		return
 	}
+	copyDuration := time.Since(copyStart)
+	speed := float64(copied) / copyDuration.Seconds() / 1024 / 1024 // MB/s
+	s.logger.Info("文件复制完成", "大小", copied, "耗时", copyDuration, "速度", fmt.Sprintf("%.2f MB/s", speed))
 
 	// 获取文件信息
 	fileInfo, _ := dst.Stat()
@@ -115,9 +143,11 @@ func (s *Server) uploadFile(c *gin.Context) {
 		Path:         uploadPath,
 	}
 
+	totalDuration := time.Since(startTime)
 	s.logger.Info("文件上传成功",
 		"filename", filename,
 		"original_name", header.Filename,
+		"总耗时", totalDuration,
 		"size", fileInfo.Size(),
 	)
 

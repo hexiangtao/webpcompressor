@@ -140,17 +140,29 @@ class WebPCompressor {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch('/api/v1/upload', {
-            method: 'POST',
-            body: formData
-        });
+        console.log('开始上传文件:', file.name, file.size);
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || '上传失败');
+        try {
+            const response = await fetch('/api/v1/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            console.log('上传响应状态:', response.status);
+
+            if (!response.ok) {
+                const error = await response.json();
+                console.error('上传失败:', error);
+                throw new Error(error.error || '上传失败');
+            }
+
+            const result = await response.json();
+            console.log('上传成功:', result);
+            return result;
+        } catch (error) {
+            console.error('上传出错:', error);
+            throw error;
         }
-
-        return await response.json();
     }
 
     updateUploadZone(file) {
@@ -180,6 +192,9 @@ class WebPCompressor {
                 parallel: this.parallelCheck.checked
             };
 
+            console.log('创建任务数据:', taskData);
+            console.log('上传文件信息:', this.uploadedFile);
+
             const response = await fetch('/api/v1/tasks', {
                 method: 'POST',
                 headers: {
@@ -188,8 +203,11 @@ class WebPCompressor {
                 body: JSON.stringify(taskData)
             });
 
+            console.log('任务创建响应状态:', response.status);
+            
             if (!response.ok) {
                 const error = await response.json();
+                console.error('任务创建失败:', error);
                 throw new Error(error.error || '创建任务失败');
             }
 

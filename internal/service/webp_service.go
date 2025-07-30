@@ -483,10 +483,13 @@ func (s *WebPService) parseFrameLine(line string) (*domain.FrameInfo, error) {
 
 // buildCompressionArgs 构建压缩参数
 func (s *WebPService) buildCompressionArgs(config *domain.CompressionConfig, inputPath, outputPath string) []string {
+	// 获取有效的cwebp预设
+	cwebpPreset := s.config.MapWebPresetToCwebpPreset(config.Preset)
+
 	args := []string{
 		"-q", strconv.Itoa(config.Quality),
 		"-m", strconv.Itoa(config.Method),
-		"-preset", config.Preset,
+		"-preset", cwebpPreset, // 使用映射后的预设
 		"-mt", // 多线程
 		"-f", strconv.Itoa(config.FilterStrength),
 		"-sharpness", "0",

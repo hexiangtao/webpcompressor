@@ -243,13 +243,78 @@ func (w *Worker) executeCompressionWithProgress(
 	progressCallback(40.0, "压缩处理中...")
 	time.Sleep(100 * time.Millisecond)
 
+	// 创建一个带取消的context
+	compressionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// 启动进度更新协程
+	progressDone := make(chan bool, 1)
+	go func() {
+		defer func() {
+			select {
+			case progressDone <- true:
+			default:
+			}
+		}()
+
+		currentProgress := 40.0
+		ticker := time.NewTicker(1 * time.Second) // 每1秒更新一次进度，更频繁
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-compressionCtx.Done():
+				return
+			case <-ticker.C:
+				// 逐渐增加进度，但不超过95%
+				if currentProgress < 95.0 {
+					// 动态调整进度增量，越接近95%增量越小
+					increment := 3.0
+					if currentProgress > 80.0 {
+						increment = 1.0 // 80%以后每次增加1%
+					} else if currentProgress > 70.0 {
+						increment = 2.0 // 70-80%每次增加2%
+					}
+
+					currentProgress += increment
+					if currentProgress > 95.0 {
+						currentProgress = 95.0
+					}
+
+					// 根据进度显示不同的状态信息
+					var status string
+					if currentProgress <= 50.0 {
+						status = "压缩处理中..."
+					} else if currentProgress <= 70.0 {
+						status = "压缩帧处理中..."
+					} else if currentProgress <= 90.0 {
+						status = "优化压缩效果..."
+					} else {
+						status = "生成最终文件..."
+					}
+
+					progressCallback(currentProgress, status)
+				}
+			}
+		}
+	}()
+
 	// 调用原始的压缩服务
 	result, err := job.WebPService.CompressAnimation(
-		ctx,
+		compressionCtx,
 		job.Task.InputFile,
 		job.Task.OutputFile,
 		job.Task.Config,
 	)
+
+	// 停止进度更新协程
+	cancel()
+
+	// 等待进度协程结束或超时
+	select {
+	case <-progressDone:
+	case <-time.After(100 * time.Millisecond):
+	}
 
 	if err != nil {
 		return nil, err
